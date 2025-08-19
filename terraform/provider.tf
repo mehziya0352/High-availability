@@ -13,3 +13,4 @@ provider "google" {
   region  = var.region
   zone    = var.zone
   credentials = file("${path.module}/key.json")
+}
