@@ -1,4 +1,4 @@
-project = "crypto-lodge-466511-s8"
+project = "absolute-hub-460713-v0"
 region  = "us-central1"
 zone    = "us-central1-c"
 vm_name = "vm1-monitoring"
