@@ -4,19 +4,19 @@ data "google_compute_instance" "vm1" {
   zone    = var.zone
   project = var.project
 }
+
 resource "google_compute_snapshot" "vm_snapshot" {
-  name = "${var.vm_name}-snapshot"
-  project = var.project
-  zone = var.zone
+  name        = "${var.vm_name}-snapshot"
+  project     = var.project
+  zone        = var.zone
   source_disk = data.google_compute_instance.vm1.boot_disk[0].source
 }
 
 resource "google_compute_image" "vm1_custom_image" {
-  name = "${var.vm_name}-custom-image"
-  project = var.project
+  name            = "${var.vm_name}-custom-image"
+  project         = var.project
   source_snapshot = google_compute_snapshot.vm_snapshot.name
 }
-
 
 # Create instance template using the custom image
 resource "google_compute_instance_template" "vm1_template" {
@@ -48,11 +48,39 @@ resource "google_compute_health_check" "http_health_check" {
   }
 }
 
-# Create managed instance group in the region
-resource "google_compute_instance_group_manager" "mig" {
+# Firewall rule to allow health checks (Google Cloud's health check IP ranges)
+resource "google_compute_firewall" "allow_health_checks" {
+  name    = "${var.vm_name}-allow-hc"
+  project = var.project
+  network = "default"
+
+  allow {
+    protocol = "tcp"
+    ports    = ["80"]
+  }
+
+  source_ranges = ["35.191.0.0/16", "130.211.0.0/22"]
+  target_tags   = ["http-server"]
+}
+
+# Firewall rule to allow HTTP traffic to instances in MIG
+resource "google_compute_firewall" "allow_http" {
+  name    = "${var.vm_name}-allow-http"
+  network = "default"
+
+  allow {
+    protocol = "tcp"
+    ports    = ["80"]
+  }
+
+  target_tags = ["http-server"]
+}
+
+# Create regional managed instance group for high availability
+resource "google_compute_region_instance_group_manager" "mig" {
   name               = "${var.vm_name}-mig"
   project            = var.project
-  zone               = var.zone
+  region             = var.region
   base_instance_name = var.vm_name
   target_size        = var.min_replicas
 
@@ -66,13 +94,21 @@ resource "google_compute_instance_group_manager" "mig" {
   }
 }
 
+# Named port for MIG - required to link backend service port_name
+resource "google_compute_instance_group_named_port" "http" {
+  group   = google_compute_region_instance_group_manager.mig.instance_group
+  region  = var.region
+  name    = "http"
+  port    = 80
+  project = var.project
+}
 
-# Create autoscaler for MIG
-resource "google_compute_autoscaler" "autoscaler" {
+# Create regional autoscaler for the MIG
+resource "google_compute_region_autoscaler" "autoscaler" {
   name    = "${var.vm_name}-autoscaler"
   project = var.project
-  zone = var.zone
-  target  = google_compute_instance_group_manager.mig.id
+  region  = var.region
+  target  = google_compute_region_instance_group_manager.mig.id
 
   autoscaling_policy {
     max_replicas    = var.max_replicas
@@ -80,21 +116,21 @@ resource "google_compute_autoscaler" "autoscaler" {
     cpu_utilization {
       target = var.cpu_utilization_target
     }
-
     cooldown_period = 60
   }
 }
 
-# Backend service for load balancer pointing to MIG
+# Backend service for load balancer pointing to the regional MIG with port_name linked to named port
 resource "google_compute_backend_service" "backend_service" {
   name          = "${var.vm_name}-backend-service"
   project       = var.project
   protocol      = "HTTP"
   timeout_sec   = 10
   health_checks = [google_compute_health_check.http_health_check.self_link]
+  port_name     = "http"
 
   backend {
-    group = google_compute_instance_group_manager.mig.instance_group
+    group = google_compute_region_instance_group_manager.mig.instance_group
   }
 }
 
@@ -112,10 +148,10 @@ resource "google_compute_target_http_proxy" "http_proxy" {
   url_map = google_compute_url_map.url_map.self_link
 }
 
-# Reserve a global IP for the load balancer
+# Reserve a global static IP for the load balancer
 resource "google_compute_global_address" "lb_ip" {
   name    = "${var.vm_name}-lb-ip"
- project = var.project
+  project = var.project
 }
 
 # Forwarding rule to route external traffic to the HTTP proxy
