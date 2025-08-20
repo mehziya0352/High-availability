@@ -40,19 +40,19 @@ jobs:
           ls -l $TERRAFORM_DIR
 
       # Step 6: Terraform Init
-      - name: Terraform Init
-        working-directory: ${{ env.TERRAFORM_DIR }}
-        run: terraform init
+      #- name: Terraform Init
+       # working-directory: ${{ env.TERRAFORM_DIR }}
+        #run: terraform init
 
       # Step 7: Terraform Plan
-      - name: Terraform Plan
-        working-directory: ${{ env.TERRAFORM_DIR }}
-        run: terraform plan -out=tfplan
+      #- name: Terraform Plan
+       # working-directory: ${{ env.TERRAFORM_DIR }}
+        #run: terraform plan -out=tfplan
 
       # Step 8: Terraform Apply
-      - name: Terraform Apply
-        working-directory: ${{ env.TERRAFORM_DIR }}
-        run: terraform apply -auto-approve tfplan
+      #- name: Terraform Apply
+       # working-directory: ${{ env.TERRAFORM_DIR }}
+        #run: terraform apply -auto-approve tfplan
 
       # Optional: Terraform Destroy (use with caution)
       - name: Terraform Destroy
