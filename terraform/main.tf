@@ -198,7 +198,7 @@ resource "google_compute_firewall" "allow_lb_healthchecks" {
   direction = "INGRESS"
   target_tags = ["http-server"]
 
-  allowed {
+  allow {
     IPProtocol = "tcp"
     ports      = ["80"]
   }
@@ -219,7 +219,7 @@ resource "google_compute_firewall" "mig_to_influxdb" {
   direction = "EGRESS"
   target_tags = ["http-server"]
 
-  allowed {
+  allow {
     IPProtocol = "tcp"
     ports      = ["8086"]
   }
