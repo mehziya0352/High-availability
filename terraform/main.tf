@@ -175,7 +175,19 @@ resource "google_compute_region_target_http_proxy" "http_proxy" {
   region  = var.region
   url_map = google_compute_region_url_map.url_map.self_link
 }
+resource "google_compute_firewall" "mig_to_influxdb" {
+  name    = "allow-mig-to-influxdb"
+  network = "default"
+  project = var.project
 
+  allow {
+    protocol = "tcp"
+    ports    = ["8086"]
+  }
+
+  source_tags = ["http-server"] # MIG
+  target_tags = ["influxdb"]    # Your InfluxDB VM
+}
 # Regional Forwarding Rule
 resource "google_compute_forwarding_rule" "forwarding_rule" {
   name                   = "${var.vm_name}-forwarding-rule"
