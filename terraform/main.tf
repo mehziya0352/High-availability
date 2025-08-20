@@ -210,8 +210,8 @@ resource "google_compute_forwarding_rule" "forwarding_rule" {
   target                 = google_compute_region_target_http_proxy.http_proxy.self_link
   port_range             = "80"
   load_balancing_scheme  = "EXTERNAL_MANAGED"
-  network                = "default"
 
-  # 🔑 Required for regional external HTTP(S) LB
-  subnetwork             = google_compute_subnetwork.proxy_only_subnet.self_link
+  network    = "default"
+  subnetwork = google_compute_subnetwork.proxy_only_subnet.self_link
 }
+
