@@ -146,6 +146,9 @@ resource "google_compute_region_backend_service" "backend_service" {
 
   backend {
     group = google_compute_region_instance_group_manager.mig.instance_group
+    balancing_mode  = "UTILIZATION"
+    max_utilization = 0.8
+    capacity_scaler = 1.0
   }
 
   depends_on = [
