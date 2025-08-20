@@ -8,3 +8,6 @@ influxdb_vm_ip = "34.60.15.253"
 min_replicas = 1
 max_replicas = 3
 cpu_utilization_target = 0.8
+influxdb_org="admin"
+influxdb_bucket="admin"
+influxdb_token="HVqpjfP11LEYe8xcrqjIxCYoDZaxHnA7ITevx4Y8w7d4iRkNUS23NJ5icV5elFQh5RtAP4zhUPokEpIC6x5rAg=="
