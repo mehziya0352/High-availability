@@ -153,31 +153,37 @@ resource "google_compute_region_backend_service" "backend_service" {
   ]
 }
 
-# URL Map
-resource "google_compute_url_map" "url_map" {
+# Regional IP Address
+resource "google_compute_address" "lb_ip" {
+  name    = "${var.vm_name}-lb-ip"
+  project = var.project
+  region  = var.region
+}
+
+# Regional URL Map
+resource "google_compute_region_url_map" "url_map" {
   name            = "${var.vm_name}-url-map"
   project         = var.project
+  region          = var.region
   default_service = google_compute_region_backend_service.backend_service.self_link
 }
 
-# Target HTTP Proxy
-resource "google_compute_target_http_proxy" "http_proxy" {
+# Regional Target HTTP Proxy
+resource "google_compute_region_target_http_proxy" "http_proxy" {
   name    = "${var.vm_name}-http-proxy"
   project = var.project
-  url_map = google_compute_url_map.url_map.self_link
+  region  = var.region
+  url_map = google_compute_region_url_map.url_map.self_link
 }
 
-# Global IP
-resource "google_compute_global_address" "lb_ip" {
-  name    = "${var.vm_name}-lb-ip"
-  project = var.project
-}
-
-# Global Forwarding Rule
-resource "google_compute_global_forwarding_rule" "forwarding_rule" {
-  name       = "${var.vm_name}-forwarding-rule"
-  project    = var.project
-  ip_address = google_compute_global_address.lb_ip.address
-  target     = google_compute_target_http_proxy.http_proxy.self_link
-  port_range = "80"
+# Regional Forwarding Rule
+resource "google_compute_forwarding_rule" "forwarding_rule" {
+  name                   = "${var.vm_name}-forwarding-rule"
+  project                = var.project
+  region                 = var.region
+  ip_address             = google_compute_address.lb_ip.address
+  target                 = google_compute_region_target_http_proxy.http_proxy.self_link
+  port_range             = "80"
+  load_balancing_scheme  = "EXTERNAL_MANAGED"
+  network                = "default"
 }
