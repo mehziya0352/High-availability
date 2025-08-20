@@ -202,7 +202,6 @@ resource "google_compute_subnetwork" "proxy_only_subnet" {
   role          = "ACTIVE"
 }
 
-# Regional Forwarding Rule
 resource "google_compute_forwarding_rule" "forwarding_rule" {
   name                   = "${var.vm_name}-forwarding-rule"
   project                = var.project
@@ -212,4 +211,7 @@ resource "google_compute_forwarding_rule" "forwarding_rule" {
   port_range             = "80"
   load_balancing_scheme  = "EXTERNAL_MANAGED"
   network                = "default"
+
+  # 🔑 Required for regional external HTTP(S) LB
+  subnetwork             = google_compute_subnetwork.proxy_only_subnet.self_link
 }
