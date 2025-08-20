@@ -38,21 +38,41 @@ resource "google_compute_instance_template" "vm1_template" {
   }
 
   tags = ["http-server"]
+
+   # ✅ Custom Telegraf config in metadata
+  metadata = {
+    telegraf_conf = <<-EOT
+      [agent]
+        interval = "10s"
+        round_interval = true
+
+      [[outputs.influxdb]]
+        urls = ["http://${var.influxdb_vm_ip}:8086"]
+        database = "metrics"
+
+      [[inputs.cpu]]
+        percpu = true
+        totalcpu = true
+      [[inputs.mem]]
+      [[inputs.disk]]
+      [[inputs.net]]
+    EOT
+  }
+  # ✅ Startup script installs & configures Telegraf
   metadata_startup_script = <<-EOT
     #!/bin/bash
     apt-get update -y
-    apt-get install -y wget gnupg
+    apt-get install -y wget gnupg curl
 
-    # Add InfluxData repo
     wget -qO- https://repos.influxdata.com/influxdata-archive.key | sudo apt-key add -
     echo "deb https://repos.influxdata.com/debian stable main" | tee /etc/apt/sources.list.d/influxdata.list
     apt-get update -y
     apt-get install -y telegraf
 
-    # Configure Telegraf to send metrics to InfluxDB VM
-    INFLUXDB_URL="http://${var.influxdb_vm_ip}:8086"
-    sed -i "s|# urls = \[\"http://127.0.0.1:8086\"\]|urls = [\"$INFLUXDB_URL\"]|" /etc/telegraf/telegraf.conf
-    sed -i "s|# database = \"telegraf\"|database = \"metrics\"|" /etc/telegraf/telegraf.conf
+    # Write config from instance metadata
+    curl -s -H "Metadata-Flavor: Google" \
+      http://metadata.google.internal/computeMetadata/v1/instance/attributes/telegraf_conf \
+      -o /etc/telegraf/telegraf.conf
 
     systemctl enable telegraf
     systemctl restart telegraf
