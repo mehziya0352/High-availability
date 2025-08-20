@@ -136,7 +136,7 @@ resource "google_compute_region_autoscaler" "autoscaler" {
 }
 
 # ✅ Backend service with depends_on
-resource "google_compute_backend_service" "backend_service" {
+resource "google_compute_region_backend_service" "backend_service" {
   name                  = "${var.vm_name}-backend-service"
   project               = var.project
   protocol              = "HTTP"
@@ -157,7 +157,7 @@ resource "google_compute_backend_service" "backend_service" {
 resource "google_compute_url_map" "url_map" {
   name            = "${var.vm_name}-url-map"
   project         = var.project
-  default_service = google_compute_backend_service.backend_service.self_link
+  default_service = google_compute_region_backend_service.backend_service.self_link
 }
 
 # Target HTTP Proxy
