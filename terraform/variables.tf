@@ -47,6 +47,19 @@ variable "cpu_utilization_target" {
   type        = number
   default     = 0.8
 }
+variable "influxdb_org" {
+  description = "Influxdb organisation name"
+  type        = string
+}
+variable "influxdb_bucket" {
+  description = "Influxdb bucket name"
+  type        = string
+}
+variable "influxdb_token" {
+  description = "Influxdb token"
+  type        = string
+}
+
 variable "influxdb_vm_ip" {
   description = "Private or public IP of the InfluxDB + Grafana VM"
   type        = string
