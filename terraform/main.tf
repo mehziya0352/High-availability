@@ -20,7 +20,9 @@ resource "google_compute_image" "vm1_custom_image" {
   source_snapshot = google_compute_snapshot.vm_snapshot.name
 }
 
-# Instance template
+# --------------------------
+# Instance template (with Telegraf -> InfluxDB v2)
+# --------------------------
 resource "google_compute_instance_template" "vm1_template" {
   name         = "${var.vm_name}-template"
   machine_type = var.machine_type
@@ -39,16 +41,18 @@ resource "google_compute_instance_template" "vm1_template" {
 
   tags = ["http-server"]
 
-   # ✅ Custom Telegraf config in metadata
+  # Telegraf config pushed via metadata (InfluxDB v2)
   metadata = {
     telegraf_conf = <<-EOT
       [agent]
         interval = "10s"
         round_interval = true
 
-      [[outputs.influxdb]]
+      [[outputs.influxdb_v2]]
         urls = ["http://${var.influxdb_vm_ip}:8086"]
-        database = "metrics"
+        token = "${var.influxdb_token}"
+        organization = "${var.influxdb_org}"
+        bucket = "${var.influxdb_bucket}"
 
       [[inputs.cpu]]
         percpu = true
@@ -58,18 +62,19 @@ resource "google_compute_instance_template" "vm1_template" {
       [[inputs.net]]
     EOT
   }
-  # ✅ Startup script installs & configures Telegraf
+
+  # Startup script installs & applies Telegraf config
   metadata_startup_script = <<-EOT
     #!/bin/bash
+    set -e
     apt-get update -y
     apt-get install -y wget gnupg curl
 
-    wget -qO- https://repos.influxdata.com/influxdata-archive.key | sudo apt-key add -
-    echo "deb https://repos.influxdata.com/debian stable main" | tee /etc/apt/sources.list.d/influxdata.list
+    wget -qO- https://repos.influxdata.com/influxdata-archive.key | apt-key add -
+    echo "deb https://repos.influxdata.com/debian stable main" > /etc/apt/sources.list.d/influxdata.list
     apt-get update -y
     apt-get install -y telegraf
 
-    # Write config from instance metadata
     curl -s -H "Metadata-Flavor: Google" \
       http://metadata.google.internal/computeMetadata/v1/instance/attributes/telegraf_conf \
       -o /etc/telegraf/telegraf.conf
@@ -79,11 +84,12 @@ resource "google_compute_instance_template" "vm1_template" {
   EOT
 }
 
-# ✅ Regional Health Check (fixed)
-resource "google_compute_region_health_check" "http_health_check" {
+# --------------------------
+# Global Health Check (required by global backend service)
+# --------------------------
+resource "google_compute_health_check" "http_health_check" {
   name                = "${var.vm_name}-health-check"
   project             = var.project
-  region              = var.region
   check_interval_sec  = 10
   timeout_sec         = 5
   healthy_threshold   = 2
@@ -95,7 +101,9 @@ resource "google_compute_region_health_check" "http_health_check" {
   }
 }
 
-# ✅ Regional MIG
+# --------------------------
+# Regional MIG (spreads across zones)
+# --------------------------
 resource "google_compute_region_instance_group_manager" "mig" {
   name               = "${var.vm_name}-regional-mig"
   project            = var.project
@@ -107,16 +115,17 @@ resource "google_compute_region_instance_group_manager" "mig" {
     instance_template = google_compute_instance_template.vm1_template.self_link
   }
 
-  # Distribute across multiple zones
+  # Provide a list of zones, e.g. ["us-central1-a","us-central1-b","us-central1-c"]
   distribution_policy_zones = var.zones
 
   auto_healing_policies {
-    health_check      = google_compute_region_health_check.http_health_check.self_link
+    # Use the GLOBAL health check here as well
+    health_check      = google_compute_health_check.http_health_check.self_link
     initial_delay_sec = 300
   }
 }
 
-# ✅ Regional Autoscaler
+# Regional Autoscaler
 resource "google_compute_region_autoscaler" "autoscaler" {
   name    = "${var.vm_name}-regional-autoscaler"
   project = var.project
@@ -124,8 +133,8 @@ resource "google_compute_region_autoscaler" "autoscaler" {
   target  = google_compute_region_instance_group_manager.mig.id
 
   autoscaling_policy {
-    max_replicas    = var.max_replicas
-    min_replicas    = var.min_replicas
+    max_replicas = var.max_replicas
+    min_replicas = var.min_replicas
     cpu_utilization {
       target = var.cpu_utilization_target
     }
@@ -133,49 +142,87 @@ resource "google_compute_region_autoscaler" "autoscaler" {
   }
 }
 
-# ✅ Backend service with depends_on
+# --------------------------
+# Global HTTP Load Balancer
+# --------------------------
 resource "google_compute_backend_service" "backend_service" {
   name                  = "${var.vm_name}-backend-service"
   project               = var.project
   protocol              = "HTTP"
   timeout_sec           = 10
   load_balancing_scheme = "EXTERNAL_MANAGED"
-  health_checks         = [google_compute_region_health_check.http_health_check.self_link]
+  health_checks         = [google_compute_health_check.http_health_check.self_link]
 
   backend {
     group = google_compute_region_instance_group_manager.mig.instance_group
   }
 
   depends_on = [
-    google_compute_region_health_check.http_health_check
+    google_compute_health_check.http_health_check
   ]
 }
 
-# URL Map
 resource "google_compute_url_map" "url_map" {
   name            = "${var.vm_name}-url-map"
   project         = var.project
   default_service = google_compute_backend_service.backend_service.self_link
 }
 
-# Target HTTP Proxy
 resource "google_compute_target_http_proxy" "http_proxy" {
   name    = "${var.vm_name}-http-proxy"
   project = var.project
   url_map = google_compute_url_map.url_map.self_link
 }
 
-# Global IP
 resource "google_compute_global_address" "lb_ip" {
   name    = "${var.vm_name}-lb-ip"
   project = var.project
 }
 
-# Global Forwarding Rule
 resource "google_compute_global_forwarding_rule" "forwarding_rule" {
   name       = "${var.vm_name}-forwarding-rule"
   project    = var.project
   ip_address = google_compute_global_address.lb_ip.address
   target     = google_compute_target_http_proxy.http_proxy.self_link
   port_range = "80"
+}
+
+# --------------------------
+# Firewall: allow L7 health checks to instances (port 80)
+# --------------------------
+resource "google_compute_firewall" "allow_lb_healthchecks" {
+  name    = "${var.vm_name}-allow-hc-80"
+  project = var.project
+  network = "default"
+
+  direction = "INGRESS"
+  target_tags = ["http-server"]
+
+  allowed {
+    IPProtocol = "tcp"
+    ports      = ["80"]
+  }
+
+  # Google health checker IPs
+  source_ranges = [
+    "130.211.0.0/22",
+    "35.191.0.0/16"
+  ]
+}
+
+# Firewall: allow MIG instances to reach InfluxDB on monitoring VM (8086)
+resource "google_compute_firewall" "mig_to_influxdb" {
+  name    = "${var.vm_name}-mig-to-influxdb"
+  project = var.project
+  network = "default"
+
+  direction = "EGRESS"
+  target_tags = ["http-server"]
+
+  allowed {
+    IPProtocol = "tcp"
+    ports      = ["8086"]
+  }
+
+  destination_ranges = ["${var.influxdb_vm_ip}/32"]
 }
