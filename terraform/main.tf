@@ -191,6 +191,17 @@ resource "google_compute_firewall" "mig_to_influxdb" {
   source_tags = ["http-server"] # MIG
   target_tags = ["influxdb"]    # Your InfluxDB VM
 }
+# Proxy-only subnet for LB
+resource "google_compute_subnetwork" "proxy_only_subnet" {
+  name          = "proxy-only-subnet"
+  ip_cidr_range = "10.129.0.0/23"     # must be /23
+  region        = var.region
+  network       = "default"
+
+  purpose       = "REGIONAL_MANAGED_PROXY"
+  role          = "ACTIVE"
+}
+
 # Regional Forwarding Rule
 resource "google_compute_forwarding_rule" "forwarding_rule" {
   name                   = "${var.vm_name}-forwarding-rule"
