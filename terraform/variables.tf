@@ -42,3 +42,7 @@ variable "cpu_utilization_target" {
   type        = number
   default     = 0.8
 }
+variable "influxdb_vm_ip" {
+  description = "Private or public IP of the InfluxDB + Grafana VM"
+  type        = string
+}
