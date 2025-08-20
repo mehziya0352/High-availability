@@ -12,6 +12,11 @@ variable "zone" {
   description = "GCP zone"
   type        = string
 }
+variable "zones" {
+  description = "List of zones inside the region for Regional MIG"
+  type        = list(string)
+  default     = ["us-central1-b", "us-central1-c"]
+}
 
 variable "vm_name" {
   description = "Name of existing VM to create image from"
