@@ -36,49 +36,71 @@ resource "google_compute_instance_template" "vm1_template" {
     network = "default"
     access_config {}
   }
-
   tags = ["http-server"]
-  # Telegraf config pushed via metadata (InfluxDB v2)
-  metadata = {
-    telegraf_conf = <<-EOT
-      [agent]
-        interval = "10s"
-        round_interval = true
 
-      [[outputs.influxdb_v2]]
-        urls = ["http://${var.influxdb_vm_ip}:8086"]
-        token = "${var.influxdb_token}"
-        organization = "${var.influxdb_org}"
-        bucket = "${var.influxdb_bucket}"
+ metadata_startup_script = <<-EOT
+  #!/bin/bash
+  apt-get update -y
+  apt-get install -y wget curl gnupg
 
-      [[inputs.cpu]]
-        percpu = true
-        totalcpu = true
-      [[inputs.mem]]
-      [[inputs.disk]]
-      [[inputs.net]]
-    EOT
-  }
+  # Add InfluxData repo
+  curl -sL https://repos.influxdata.com/influxdata-archive.key | gpg --dearmor | tee /usr/share/keyrings/influxdata-archive-keyring.gpg > /dev/null
+  echo "deb [signed-by=/usr/share/keyrings/influxdata-archive-keyring.gpg] https://repos.influxdata.com/debian stable main" | tee /etc/apt/sources.list.d/influxdata.list
 
-  # Startup script installs & applies Telegraf config
-  metadata_startup_script = <<-EOT
-    #!/bin/bash
-    set -e
-    apt-get update -y
-    apt-get install -y wget gnupg curl
+  apt-get update -y
+  apt-get install -y telegraf
 
-    wget -qO- https://repos.influxdata.com/influxdata-archive.key | apt-key add -
-    echo "deb https://repos.influxdata.com/debian stable main" > /etc/apt/sources.list.d/influxdata.list
-    apt-get update -y
-    apt-get install -y telegraf
+  # Replace default Telegraf config with metadata-provided config
+  curl -s "http://metadata.google.internal/computeMetadata/v1/instance/attributes/telegraf_conf" \
+    -H "Metadata-Flavor: Google" > /etc/telegraf/telegraf.conf
 
-    curl -s -H "Metadata-Flavor: Google" \
-      http://metadata.google.internal/computeMetadata/v1/instance/attributes/telegraf_conf \
-      -o /etc/telegraf/telegraf.conf
+  # Patch config with actual GCP instance name
+  INSTANCE_NAME=$(curl -s -H "Metadata-Flavor: Google" http://metadata.google.internal/computeMetadata/v1/instance/name)
+  sed -i "s/instance = \"\\$HOSTNAME\"/instance = \"$INSTANCE_NAME\"/" /etc/telegraf/telegraf.conf
 
-    systemctl enable telegraf
-    systemctl restart telegraf
+  systemctl enable telegraf
+  systemctl restart telegraf
+EOT
+
+
+ metadata = {
+  telegraf_conf = <<-EOT
+    [agent]
+      interval = "10s"
+      round_interval = true
+      hostname = ""   # disable default hostname to avoid duplication
+
+    [global_tags]
+      instance = "$HOSTNAME"
+
+    [[outputs.influxdb_v2]]
+      urls = ["http://${var.influxdb_vm_ip}:8086"]
+      token = "${var.influxdb_token}"
+      organization = "${var.influxdb_org}"
+      bucket = "${var.influxdb_bucket}"
+
+    [[inputs.cpu]]
+      percpu = true
+      totalcpu = true
+
+    [[inputs.mem]]
+    [[inputs.disk]]
+    [[inputs.net]]
+
+    # ✅ HTTP health check (port 80 app check)
+    [[inputs.http]]
+      urls = ["http://localhost:80/"]
+      method = "GET"
+      timeout = "5s"
+      interval = "30s"
+      response_timeout = "5s"
+      follow_redirects = true
+      fielddrop = ["result"]
+      data_format = "influx"
   EOT
+}
+
+ 
 }
 
 # Health check
