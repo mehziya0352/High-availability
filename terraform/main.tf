@@ -94,8 +94,6 @@ EOT
       timeout = "5s"
       interval = "30s"
       response_timeout = "5s"
-      follow_redirects = true
-      fielddrop = ["result"]
       data_format = "influx"
   EOT
 }
